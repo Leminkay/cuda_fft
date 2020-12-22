@@ -603,9 +603,13 @@ cudaError_t fft_naive_3d(long long signalSizeY, long long signalSizeX, long long
         batch = C * W / signalSizeX;
         //transport to host
 
-        checkCudaErrors(cudaMemcpy(d_signal, buffer, gpu_mem_size_b,
-            cudaMemcpyDeviceToHost));
 
+        checkCudaErrors(cufftPlanMany(&plan_advX, 1, n, inembed, istride, idist,
+            onembed, ostride, odist, CUFFT_C2C, batch));
+        checkCudaErrors(cufftExecC2C(plan_advX, reinterpret_cast<cufftComplex*>(d_signal),
+            reinterpret_cast<cufftComplex*>(d_signal), CUFFT_FORWARD));
+        checkCudaErrors(cudaMemcpy(buffer, d_signal, gpu_mem_size_b,
+            cudaMemcpyDeviceToHost));
         memcpy(h_result + (i * C * W), buffer, C * W * sizeof(Complex));
 
     }
@@ -627,7 +631,7 @@ cudaError_t fft_naive_3d(long long signalSizeY, long long signalSizeX, long long
         //                           cudaMemcpyHostToDevice));
 
         //make plan
-        cufftHandle plan_adv;
+        cufftHandle plan_advY;
         int n[] = { C };
         int inembed[] = { W };
         int onembed[] = { W };
@@ -635,14 +639,17 @@ cudaError_t fft_naive_3d(long long signalSizeY, long long signalSizeX, long long
         int idist = 1;
         int ostride = signalSizeX;
         int odist = 1;
-        int batch = W;
+        int batch = signalSizeX;
 
         //checkCudaErrors(cufftCreate(&plan_adv));
         //does it transpose? (stride, dist)
-        checkCudaErrors(cufftPlanMany(&plan_adv, 1, n, inembed, istride, idist,
+        checkCudaErrors(cufftPlanMany(&plan_advY, 1, n, inembed, istride, idist,
             onembed, ostride, odist, CUFFT_C2C, batch));
-        checkCudaErrors(cufftExecC2C(plan_adv, reinterpret_cast<cufftComplex*>(d_signal),
-            reinterpret_cast<cufftComplex*>(d_signal), CUFFT_FORWARD));
+
+        for (int k = 0; k < W / signalSizeX; k++) {
+            checkCudaErrors(cufftExecC2C(plan_advY, d_signal + (k * signalSizeX * C),
+                d_signal + (k * signalSizeX * C), CUFFT_FORWARD));
+        }
 
         //transport to host
 

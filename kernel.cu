@@ -18,7 +18,7 @@ using namespace std;
 
 // Complex data type
 typedef float2 Complex;
-//8byte float
+
 static __device__ __host__ inline Complex ComplexAdd(Complex, Complex);
 static __device__ __host__ inline Complex ComplexScale(Complex, float);
 static __device__ __host__ inline Complex ComplexMul(Complex, Complex);
@@ -29,11 +29,9 @@ __managed__ int W;
 __device__ int XY;
 
 
-
 //declaration
 cudaError_t fft_1d(long long);
-cudaError_t fft_2d(long long, long long);
-cudaError_t fft_3d();
+cudaError_t fft_3d(long long, long long, long long);
 cudaError_t test();
 cudaError_t test_3d();
 
@@ -42,15 +40,7 @@ cudaError_t cudaStatus = cudaSetDevice(0);
 int main()
 {
 
-    
-  //  if (cudaStatus != cudaSuccess) {
-    //test();
     test_3d();
-
-    // cudaDeviceReset must be called before exiting in order for profiling and
-    // tracing tools such as Nsight and Visual Profiler to show complete traces.
-   // cudaStatus = cudaDeviceReset();
-
 
     return 0;
 }
@@ -64,18 +54,16 @@ cudaError_t test()
     Complex* h_twiddle = reinterpret_cast<Complex*>(malloc(sizeof(Complex) * signalSize));
 
     Complex* d_signal;
-    //Complex* d_result;
     Complex* d_twiddle;
     checkCudaErrors(cudaMalloc(reinterpret_cast<void**>(&d_signal), sizeof(Complex) * signalSize));
-   // checkCudaErrors(cudaMalloc(reinterpret_cast<void**>(&d_result), sizeof(Complex) * signalSize));
     checkCudaErrors(cudaMalloc(reinterpret_cast<void**>(&d_twiddle), sizeof(Complex) * signalSize));
-
 
     srand(2);
     for (unsigned int i = 0; i < signalSize; ++i) {
         h_signal[i].x = rand() / static_cast<float>(RAND_MAX);
         h_signal[i].y = 0;
     }
+
     cout << "signal\n";
     for (int i = 0; i < 8; i++) {
         for (int j = 0; j < 4; j++) {
@@ -91,6 +79,7 @@ cudaError_t test()
         
     }
     cout << "\n";
+
     int X1 = 8, X2 = 4;
     
     for (int i = 0; i < X1  ; i++) {
@@ -108,10 +97,12 @@ cudaError_t test()
         }
         cout << "\n";
     }
+
     checkCudaErrors(cudaMemcpy(d_twiddle, h_twiddle, sizeof(Complex) * signalSize,
         cudaMemcpyHostToDevice));
 
     checkCudaErrors(cudaMemcpy(d_signal, h_signal, sizeof(Complex) * signalSize, cudaMemcpyHostToDevice));
+
     C = 8;
     W = 4;
 
@@ -159,9 +150,8 @@ cudaError_t test()
         cout << "\n";
     }
 
-    
-    cufftHandle plan_adv;
 
+    cufftHandle plan_adv;
 
     n[0] = { W };
     inembed[0] = { C };
@@ -179,7 +169,7 @@ cudaError_t test()
         cudaMemcpyDeviceToHost));
     
     cout << "\n";
-    cout << "resultt\n";
+    cout << "result\n";
     for (int i = 0; i < X1 * X2; i++) {
         
         cout << "(" << h_result[i].x<< ", " << h_result[i].y << ") \n";
@@ -203,6 +193,7 @@ Error:
     return cudaStatus;
 }
 cudaError_t test_3d() {
+
     int signalSizeX = 8;
     int signalSizeY = 2;
     int signalSizeZ = 4;
@@ -242,19 +233,7 @@ cudaError_t test_3d() {
     int tW = signalSizeY * signalSizeX;
     Complex* buffer = reinterpret_cast<Complex*>(malloc(sizeof(Complex) * tC * tW));
 
-
-   
-   
-        //transfer data to gpu
-    
-  //  memcpy(buffer, h_signal, C * W * sizeof(Complex));
     checkCudaErrors(cudaMemcpy(d_signal, h_signal, tC * tW * sizeof(Complex), cudaMemcpyHostToDevice));
-    
-
-    //checkCudaErrors(cudaMemcpy(d_signal, buffer, gpu_mem_size_b, 
-    //                           cudaMemcpyHostToDevice));
-
-    //transfer twiddle
 
 
     //make plan for z fft
@@ -269,8 +248,7 @@ cudaError_t test_3d() {
     int odist = 1;
     int batch = tW;
 
-    //checkCudaErrors(cufftCreate(&plan_adv));
-    //it is transpose
+
     checkCudaErrors(cufftPlanMany(&plan_advZ, 1, n, inembed, istride, idist,
         onembed, ostride, odist, CUFFT_C2C, batch));
     checkCudaErrors(cufftExecC2C(plan_advZ, reinterpret_cast<cufftComplex*>(d_signal),
@@ -304,7 +282,6 @@ cudaError_t test_3d() {
     ostride = 1;
     odist = (int)signalSizeX;
     batch = signalSizeY * signalSizeZ;
-    //transport to host
 
     checkCudaErrors(cufftPlanMany(&plan_advX, 1, n, inembed, istride, idist,
         onembed, ostride, odist, CUFFT_C2C, batch));
@@ -333,11 +310,6 @@ cudaError_t test_3d() {
     tC = signalSizeY;
     tW = gpu_mem_size / tC;
 
-
-    //checkCudaErrors(cudaMemcpy(d_signal, buffer, gpu_mem_size_b, 
-    //                           cudaMemcpyHostToDevice));
-
-    //make plan
     cufftHandle plan_advY;
     n[0] = signalSizeY;
     
@@ -349,22 +321,19 @@ cudaError_t test_3d() {
     odist = 1;
     batch = signalSizeX;
 
-    //checkCudaErrors(cufftCreate(&plan_adv));
-    //does it transpose? (stride, dist)
     checkCudaErrors(cufftPlanMany(&plan_advY, 1, n, inembed, istride, idist,
         onembed, ostride, odist, CUFFT_C2C, batch));
     for (int k = 0; k < signalSizeZ; k++) {
-        ///cout << d_signal + (k * signalSizeX * signalSizeZ) << "\n";
+
         checkCudaErrors(cufftExecC2C(plan_advY, d_signal + (k * signalSizeX * signalSizeY),
             d_signal + (k * signalSizeX * signalSizeY), CUFFT_FORWARD));
     }
-    //checkCudaErrors(cudaDeviceSynchronize());
+
     //transport to host
 
     checkCudaErrors(cudaMemcpy(h_result, d_signal, signalSizeX * signalSizeZ * signalSizeY * sizeof(Complex),
         cudaMemcpyDeviceToHost));
 
-   // memcpy(h_result , buffer, C * W * sizeof(Complex));
 
     cout << "result\n";
     for (int z = 0; z < signalSizeZ; z++) {
@@ -423,8 +392,6 @@ cudaError_t fft_1d(long long signalSize) {
             h_twiddle[i * X2 + j].y = imag(polar(1.0, -2 * M_PI * i * j / signalSize));
         }
     }
-    
-
 
 
     C = X1;
@@ -508,8 +475,7 @@ cudaError_t fft_1d(long long signalSize) {
         int odist = 1;
         int batch = C;
 
-        //checkCudaErrors(cufftCreate(&plan_adv));
-        //does it transpose? (stride, dist)
+
         checkCudaErrors(cufftPlanMany(&plan_adv, 1, n, inembed, istride, idist,
             onembed, ostride, odist, CUFFT_C2C, batch));
         checkCudaErrors(cufftExecC2C(plan_adv, reinterpret_cast<cufftComplex*>(d_signal),
@@ -794,13 +760,13 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
         checkCudaErrors(cudaMemcpy(buffer, d_signal, gpu_mem_size_b,
             cudaMemcpyDeviceToHost));
         for (unsigned int j = 0; j < C; j++) {
-            memcpy(h_result + (i * W) + (j * X * Y * Z2), buffer, W * sizeof(Complex));
+            memcpy(h_signal + (i * W) + (j * X * Y * Z2), buffer, W * sizeof(Complex));
         }
     }
     C = Z2;
     W = gpu_mem_size / C;
 
-    int it_s = X * Y * Z1 / W;
+    it_s = X * Y * Z1 / W;
     for (unsigned int i = 0; i < it_s; i += 1) {
         //transfer data to gpu
         for (unsigned int j = 0; j < C; j++) {

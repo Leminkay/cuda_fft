@@ -359,8 +359,8 @@ Error:
 
 cudaError_t test_3d_dec() {
     long long X = 64;
-    long long Y = 128;
-    long long Z = 8192;
+    long long Y = 64;
+    long long Z = 16384;
 
     int deg = (int)log2(Z);
     long long Z1 = (int)pow(2, deg / 2);
@@ -507,7 +507,7 @@ cudaError_t test_3d_dec() {
         (W/(X * Y) + threadsPerBlock.y - 1) / threadsPerBlock.y,
         ((X * Y) + threadsPerBlock.z - 1) / threadsPerBlock.z);
     TwiddleMult3d << <numBlocks, threadsPerBlock >> > (d_result, d_twiddle);
-    cudaDeviceSynchronize();
+    checkCudaErrors(cudaDeviceSynchronize());
    // checkCudaErrors(cudaMemcpy(h_signal, d_result, X * Y * Z * sizeof(Complex), cudaMemcpyDeviceToHost));
     /*
     cout << "z1 fft * tw (z1,z2,xy)\n";
@@ -1030,7 +1030,7 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
         h_signal[i].y = 0;
     }
 
-
+  
     //allocate memory for twiddle
 
     Complex* h_twiddle = reinterpret_cast<Complex*>(malloc(sizeof(Complex) * Z1 * Z2));
@@ -1097,6 +1097,7 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
             checkCudaErrors(cufftExecC2C(plan_advZ1, reinterpret_cast<cufftComplex*>(d_signal + (k * X * Y)),
                 reinterpret_cast<cufftComplex*>(d_result + (k * X * Y * tC)), CUFFT_FORWARD));
         }
+        checkCudaErrors(cudaDeviceSynchronize());
         cufftDestroy(plan_advZ1);
 
         //int* XY;
@@ -1110,7 +1111,7 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
             (tW / (X * Y) + threadsPerBlock.y - 1) / threadsPerBlock.y,
             ((X * Y) + threadsPerBlock.z - 1) / threadsPerBlock.z);
         TwiddleMult3d << <numBlocks, threadsPerBlock >> > (d_result, d_twiddle);
-        cudaDeviceSynchronize();
+        checkCudaErrors(cudaDeviceSynchronize());
         
 
         //make plan for d(Y, X, X)
@@ -1134,13 +1135,17 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
             checkCudaErrors(cufftExecC2C(plan_advY, d_result + (k * X * Y),
                 d_signal + (k * X * Y), CUFFT_FORWARD));
         }
+        checkCudaErrors(cudaDeviceSynchronize());
         cufftDestroy(plan_advY);
         //transport to host
         checkCudaErrors(cudaMemcpy(buffer, d_signal, gpu_mem_size_b,
             cudaMemcpyDeviceToHost));
+        /*
         for (unsigned int j = 0; j < tC; j++) {
             memcpy(h_result + (i * tW) + (j * X * Y * Z2), buffer + (j * tW), tW * sizeof(Complex));
         }
+        */
+        memcpy(h_result + (i * tC * tW) , buffer , tC * tW * sizeof(Complex));
     }
     C = Z2;
     W = gpu_mem_size / C;
@@ -1205,9 +1210,10 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
             memcpy(h_result + (i * tW) + (j * X * Y * Z1), buffer + (j * tW), tW * sizeof(Complex));
         }
         
+       
     }
 
-
+    
     checkCudaErrors(cudaFree(d_signal));
     
     checkCudaErrors(cudaMalloc(reinterpret_cast<void**>(&d_signal), X* Y* Z * sizeof(Complex)));
@@ -1225,14 +1231,15 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
     double rs2 = 0, is2 = 0;
     for (int i = 0; i < X * Y * Z; i++) {
         //cout << h_result[i].x << " ";
-        if (abs(h_result[i].x - h_signal[i].x) > 1e-2) {
+        if (abs(h_result[i].x - h_signal[i].x) > 1e-2 ) {
             cout << h_result[i].x << " " << h_signal[i].x << " x " << i << "\n";
         }
-        if (abs(h_result[i].y - h_signal[i].y) > 1e-2) {
+        if (abs(h_result[i].y - h_signal[i].y) > 1e-2 ) {
             cout << h_result[i].y << " " << h_signal[i].y << " y " << i << "\n";
         }
     }
 
+    
 
 
 

@@ -1,4 +1,4 @@
-#define _USE_MATH_DEFINES
+п»ї#define _USE_MATH_DEFINES
 // includes, system
 #include <math.h>
 #include <stdio.h>
@@ -26,7 +26,8 @@ static __global__ void TwiddleMult(Complex*, Complex*);
 static __global__ void TwiddleMult3d(Complex*, Complex*);
 __managed__ int C;
 __managed__ int W;
-__device__ int d_XY;
+__managed__ int d_XYm;
+
 
 
 
@@ -36,6 +37,7 @@ cudaError_t fft_3d(long long, long long, long long);
 cudaError_t test();
 cudaError_t test_3d_naive();
 cudaError_t test_3d_dec();
+cudaError_t test_3d_dec2();
 
 cudaError_t cudaStatus = cudaSetDevice(0);
 
@@ -43,7 +45,7 @@ int main()
 {
 
     //test_3d_dec();
-    fft_3d(64, 64, 16384);
+    fft_3d(64, 32, 16384);
     return 0;
 }
 
@@ -195,10 +197,10 @@ Error:
     return cudaStatus;
 }
 cudaError_t test_3d_naive() {
-
-    int signalSizeX = 8;
-    int signalSizeY = 2;
-    int signalSizeZ = 4;
+    //64, 32, 16384
+    int signalSizeX = 64;
+    int signalSizeY = 32;
+    int signalSizeZ = 16384;
 
     // Allocate host memory for the signal
     Complex* h_signal = reinterpret_cast<Complex*>(malloc(sizeof(Complex) * signalSizeY * signalSizeX * signalSizeZ));
@@ -336,7 +338,7 @@ cudaError_t test_3d_naive() {
     checkCudaErrors(cudaMemcpy(h_result, d_signal, signalSizeX * signalSizeZ * signalSizeY * sizeof(Complex),
         cudaMemcpyDeviceToHost));
 
-
+    /*
     cout << "result\n";
     for (int z = 0; z < signalSizeZ; z++) {
         for (int y = 0; y < signalSizeY; y++) {
@@ -349,18 +351,17 @@ cudaError_t test_3d_naive() {
         }
         cout << "\n\n";
     }
-
+    */
 
 Error:
 
     return cudaStatus;
 
 }
-
 cudaError_t test_3d_dec() {
     long long X = 64;
-    long long Y = 64;
-    long long Z = 16384;
+    long long Y = 128;
+    long long Z = 8192;
 
     int deg = (int)log2(Z);
     long long Z1 = (int)pow(2, deg / 2);
@@ -393,24 +394,19 @@ cudaError_t test_3d_dec() {
     for (int z = 0; z < Z; z++) {
         for (int y = 0; y < Y; y++) {
             for (int x = 0; x < X; x++) {
-
                 cout << "(" << h_signal[x + X * (y + Y * z)].x << "; " << h_signal[x + X * (y + Y * z)].y << ") ";
             }
             cout << "\n";
-
         }
         cout << "\n";
     }
-
     cout << "(z1,z2,xy)\n";
     for (int z = 0; z < Z1; z++) {
         for (int y = 0; y < Z2; y++) {
             for (int x = 0; x < X * Y; x++) {
-
                 cout << "(" << h_signal[x + X * Y * (y + Z2 * z)].x << "; " << h_signal[x + X * Y * (y + Z2 * z)].y << ") ";
             }
             cout << "\n";
-
         }
         cout << "\n";
     }
@@ -422,7 +418,7 @@ cudaError_t test_3d_dec() {
     checkCudaErrors(cudaMalloc(reinterpret_cast<void**>(&d_twiddle), sizeof(Complex) * Z1 * Z2));
 
     //compute twidlle factors
-    // exp(2 * pi * (m - 1) * (j - 1) / n), m - строка, j - столбец
+    // exp(2 * pi * (m - 1) * (j - 1) / n), m - Г±ГІГ°Г®ГЄГ , j - Г±ГІГ®Г«ГЎГҐГ¶
     for (int i = 0; i < Z2; i++) {
         for (int j = 0; j < Z1; j++) {
             h_twiddle[i * Z1 + j].x = real(polar(1.0, -2 * M_PI * i * j / Z));
@@ -472,17 +468,15 @@ cudaError_t test_3d_dec() {
     // have to mult by twiddle factor
     int txy = X * Y;
     //*XY = txy;
-    cudaMemcpyToSymbol(&d_XY, &txy, sizeof(int));
+    d_XYm = txy;
     /*
     cout << "z1 fft bf twiddle (z2,z1,xy)\n";
     for (int z = 0; z < Z2; z++) {
         for (int y = 0; y < Z1; y++) {
             for (int x = 0; x < X * Y; x++) {
-
                 cout << "(" << h_signal[x + X * Y * (y + Z1 * z)].x << "; " << h_signal[x + X * Y * (y + Z1 * z)].y << ") ";
             }
             cout << "\n";
-
         }
         cout << "\n";
     }
@@ -492,11 +486,9 @@ cudaError_t test_3d_dec() {
     for (int z = 0; z < Z2; z++) {
         for (int y = 0; y < Z1; y++) {
             for (int x = 0; x < X * Y; x++) {
-
                 cout << "(" << h_signal[x + X * Y * (y + Z1 * z)].x << "; " << h_signal[x + X * Y * (y + Z1 * z)].y << ") ";
             }
             cout << "\n";
-
         }
         cout << "\n";
     }
@@ -507,18 +499,16 @@ cudaError_t test_3d_dec() {
         (W/(X * Y) + threadsPerBlock.y - 1) / threadsPerBlock.y,
         ((X * Y) + threadsPerBlock.z - 1) / threadsPerBlock.z);
     TwiddleMult3d << <numBlocks, threadsPerBlock >> > (d_result, d_twiddle);
-    checkCudaErrors(cudaDeviceSynchronize());
+    cudaDeviceSynchronize();
    // checkCudaErrors(cudaMemcpy(h_signal, d_result, X * Y * Z * sizeof(Complex), cudaMemcpyDeviceToHost));
     /*
     cout << "z1 fft * tw (z1,z2,xy)\n";
     for (int z = 0; z < Z2; z++) {
         for (int y = 0; y < Z1; y++) {
             for (int x = 0; x < X * Y; x++) {
-
                 cout << "(" << h_signal[x + X * Y * (y + Z1 * z)].x << "; " << h_signal[x + X * Y * (y + Z1 * z)].y << ") ";
             }
             cout << "\n";
-
         }
         cout << "\n";
     }
@@ -526,11 +516,9 @@ cudaError_t test_3d_dec() {
     for (int z = 0; z < Z; z++) {
         for (int y = 0; y < Y; y++) {
             for (int x = 0; x < X; x++) {
-
                 cout << "(" << h_signal[x + X * (y + Y * z)].x << "; " << h_signal[x + X * (y + Y * z)].y << ") ";
             }
             cout << "\n";
-
         }
         cout << "\n";
     }
@@ -566,11 +554,9 @@ cudaError_t test_3d_dec() {
     for (int z = 0; z < Z; z++) {
         for (int y = 0; y < Y; y++) {
             for (int x = 0; x < X; x++) {
-
                 cout << "(" << h_signal[x + X * (y + Y * z)].x << "; " << h_signal[x + X * (y + Y * z)].y << ") ";
             }
             cout << "\n";
-
         }
         cout << "\n";
     }
@@ -578,11 +564,9 @@ cudaError_t test_3d_dec() {
     for (int z = 0; z < Z2; z++) {
         for (int y = 0; y < Z1; y++) {
             for (int x = 0; x < X * Y; x++) {
-
                 cout << "(" << h_signal[x + X * Y * (y + Z1 * z)].x << "; " << h_signal[x + X * Y * (y + Z1 * z)].y << ") ";
             }
             cout << "\n";
-
         }
         cout << "\n";
     }
@@ -618,11 +602,9 @@ cudaError_t test_3d_dec() {
     for (int z = 0; z < Z2; z++) {
         for (int y = 0; y < Z1; y++) {
             for (int x = 0; x < X * Y; x++) {
-
                 cout << "(" << h_signal[x + X * Y * (y + Z1 * z)].x << "; " << h_signal[x + X * Y * (y + Z1 * z)].y << ") ";
             }
             cout << "\n";
-
         }
         cout << "\n";
     }
@@ -630,11 +612,9 @@ cudaError_t test_3d_dec() {
     for (int z = 0; z < Z; z++) {
         for (int y = 0; y < Y; y++) {
             for (int x = 0; x < X; x++) {
-
                 cout << "(" << h_signal[x + X * (y + Y * z)].x << "; " << h_signal[x + X * (y + Y * z)].y << ") ";
             }
             cout << "\n";
-
         }
         cout << "\n";
     }
@@ -666,11 +646,9 @@ cudaError_t test_3d_dec() {
     for (int z = 0; z < Z; z++) {
         for (int y = 0; y < Y; y++) {
             for (int x = 0; x < X; x++) {
-
                 cout << "(" << h_result[x + X * (y + Y * z)].x << "; " << h_result[x + X * (y + Y * z)].y << ") ";
             }
             cout << "\n";
-
         }
         cout << "\n";
     }
@@ -678,11 +656,9 @@ cudaError_t test_3d_dec() {
     for (int z = 0; z < Z2; z++) {
         for (int y = 0; y < Z1; y++) {
             for (int x = 0; x < X * Y; x++) {
-
                 cout << "(" << h_result[x + X * Y * (y + Z1 * z)].x << "; " << h_result[x + X * Y * (y + Z1 * z)].y << ") ";
             }
             cout << "\n";
-
         }
         cout << "\n";
     }
@@ -700,10 +676,10 @@ cudaError_t test_3d_dec() {
     double rs2 = 0, is2 = 0;
     for (int i = 0; i < X * Y * Z; i++) {
         //cout << h_result[i].x << " ";
-        if (abs(h_result[i].x - h_signal[i].x) > 1e-2) {
+        if (abs(h_result[i].x - h_signal[i].x) > 1) {
             cout << h_result[i].x << " " << h_signal[i].x << " x " << i << "\n";
        }
-        if (abs(h_result[i].y - h_signal[i].y) > 1e-2) {
+        if (abs(h_result[i].y - h_signal[i].y) > 1) {
             cout << h_result[i].y <<" "<< h_signal[i].y <<" y "<< i << "\n";
         }
         rs += h_result[i].x;
@@ -748,7 +724,7 @@ cudaError_t fft_1d(long long signalSize) {
     Complex* d_twiddle;
     checkCudaErrors(cudaMalloc(reinterpret_cast<void**>(&d_twiddle), gpu_mem_size));
     //compute twidlle factors
-    // exp(2 * pi * (m - 1) * (j - 1) / n), m - строка, j - столбец
+    // exp(2 * pi * (m - 1) * (j - 1) / n), m - СЃС‚СЂРѕРєР°, j - СЃС‚РѕР»Р±РµС†
     for (int i = 0; i < X1; i++) {
         for (int j = 0; j < X2; j++) {
             h_twiddle[i * X2 + j].x = real(polar(1.0, -2 * M_PI * i * j / signalSize));
@@ -1017,6 +993,7 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
     // Allocate host and device memory for the signal
     Complex* h_signal = reinterpret_cast<Complex*>(malloc(sizeof(Complex) * signalSize));
     Complex* h_result = reinterpret_cast<Complex*>(malloc(sizeof(Complex) * signalSize));
+    Complex* h_result_2 = reinterpret_cast<Complex*>(malloc(sizeof(Complex) * signalSize));
     Complex* d_signal;
     checkCudaErrors(cudaMalloc(reinterpret_cast<void**>(&d_signal), gpu_mem_size_b));   
     Complex* d_result;
@@ -1037,7 +1014,7 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
     
 
     //compute twidlle factors
-    // exp(2 * pi * (m - 1) * (j - 1) / n), m - строка, j - столбец
+    // exp(2 * pi * (m - 1) * (j - 1) / n), m - СЃС‚СЂРѕРєР°, j - СЃС‚РѕР»Р±РµС†
     for (int i = 0; i < Z2; i++) {
         for (int j = 0; j < Z1; j++) {
             h_twiddle[i * Z1 + j].x = real(polar(1.0, -2 * M_PI * i * j / Z));
@@ -1046,7 +1023,7 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
     }
     
 
-
+    cout << Z1 << " " << Z2 << "\n";
     C = Z1;
     W = gpu_mem_size / C;
     int tC = C;
@@ -1088,7 +1065,7 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
         int ostride = X * Y;
         int odist = 1;
         int batch = X * Y;
-        // might need for loop (?) cos of possibility of output overlap
+        //  need for loop (?) cos of possibility of output overlap
         // transpose by advanced layout
         checkCudaErrors(cufftPlanMany(&plan_advZ1, 1, n, inembed, istride, idist,
             onembed, ostride, odist, CUFFT_C2C, batch));
@@ -1104,7 +1081,8 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
         //cudaMallocManaged((int **)&XY, sizeof(int));
         int txy = X * Y;
         //*XY = txy;
-        cudaMemcpyToSymbol(&d_XY, &txy, sizeof(int));
+        d_XYm = txy;
+//        cudaMemcpyToSymbol(&d_XY, &txy, sizeof(int));
  
         dim3 threadsPerBlock(8, 8, 16);
         dim3 numBlocks((tC + threadsPerBlock.x - 1) / threadsPerBlock.x,
@@ -1138,15 +1116,29 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
         checkCudaErrors(cudaDeviceSynchronize());
         cufftDestroy(plan_advY);
         //transport to host
-        checkCudaErrors(cudaMemcpy(buffer, d_signal, gpu_mem_size_b,
+        checkCudaErrors(cudaMemcpy(h_result + (i * tC * tW), d_signal, gpu_mem_size_b,
             cudaMemcpyDeviceToHost));
         /*
         for (unsigned int j = 0; j < tC; j++) {
             memcpy(h_result + (i * tW) + (j * X * Y * Z2), buffer + (j * tW), tW * sizeof(Complex));
         }
         */
-        memcpy(h_result + (i * tC * tW) , buffer , tC * tW * sizeof(Complex));
+        //memcpy(h_result + (i * tC * tW), buffer , tC * tW * sizeof(Complex));
     }
+    /*
+    cout << "y fft (z2,z1,xy)\n";
+    for (int z = 100; z < Z2; z++) {
+        for (int y = 0; y < Z1; y++) {
+            for (int x = 0; x < X * Y; x++) {
+
+                cout << "(" << h_result[x + X * Y * (y + Z1 * z)].x << "; " << h_result[x + X * Y * (y + Z1 * z)].y << ") " << x * y << " ";
+            }
+            cout << "\n";
+
+        }
+        cout << "\n";
+    }
+    */
     C = Z2;
     W = gpu_mem_size / C;
     tC = C;
@@ -1207,13 +1199,25 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
             cudaMemcpyDeviceToHost));
         
         for (unsigned int j = 0; j < tC; j++) {
-            memcpy(h_result + (i * tW) + (j * X * Y * Z1), buffer + (j * tW), tW * sizeof(Complex));
+            memcpy(h_result_2 + (i * tW) + (j * X * Y * Z1), buffer + (j * tW), tW * sizeof(Complex));
         }
         
        
     }
+    /*
+    cout << "res fft (z2,z1,xy)\n";
+    for (int z = 100; z < Z2; z++) {
+        for (int y = 0; y < Z1; y++) {
+            for (int x = 0; x < X * Y; x++) {
 
-    
+                cout << "(" << h_result_2[x + X * Y * (y + Z1 * z)].x << "; " << h_result_2[x + X * Y * (y + Z1 * z)].y << ") " << x * y << " ";
+            }
+            cout << "\n";
+
+        }
+        cout << "\n";
+    }
+    */
     checkCudaErrors(cudaFree(d_signal));
     
     checkCudaErrors(cudaMalloc(reinterpret_cast<void**>(&d_signal), X* Y* Z * sizeof(Complex)));
@@ -1229,13 +1233,14 @@ cudaError_t fft_3d(long long signalSizeX,long long signalSizeY, long long  signa
 
     double rs = 0, is = 0;
     double rs2 = 0, is2 = 0;
+
     for (int i = 0; i < X * Y * Z; i++) {
         //cout << h_result[i].x << " ";
-        if (abs(h_result[i].x - h_signal[i].x) > 1e-2 ) {
-            cout << h_result[i].x << " " << h_signal[i].x << " x " << i << "\n";
+        if (abs(h_result_2[i].x - h_signal[i].x) > 1 ) {
+            cout << h_result_2[i].x << " " << h_signal[i].x << " x " << i << "\n";
         }
-        if (abs(h_result[i].y - h_signal[i].y) > 1e-2 ) {
-            cout << h_result[i].y << " " << h_signal[i].y << " y " << i << "\n";
+        if (abs(h_result_2[i].y - h_signal[i].y) > 1 ) {
+            cout << h_result_2[i].y << " " << h_signal[i].y << " y " << i << "\n";
         }
     }
 
@@ -1278,10 +1283,12 @@ static __global__ void TwiddleMult3d(Complex* X, Complex* twiddle) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
-    int xy = d_XY;
+    int xy = d_XYm;
    // int Z2 = (k + xy * (i + C * j)) / (xy * C);
-    if (i < C && j < W/xy && k < xy)
-        X[k + xy * (i + C * j)] = ComplexMul(X[k + xy * (i + C * j)], twiddle[i + (k + xy * (i + C * j)) / (xy * C) * C]);
-        //X[k + xy * (i + C * j)].x = i + 1;
-        //X[k + xy * (i + C * j)].y = (k + xy * (i + C * j)) / (xy * C);
+
+    if (i < C && j < W / xy && k < xy) {
+        X[k + xy * (i + C * j)] = ComplexMul(X[k + xy * (i + C * j)], twiddle[i + j * C]);
+        //X[k + xy * (i + C * j)].x = xy;
+        //X[k + xy * (i + C * j)].y = k;
+    }
 }

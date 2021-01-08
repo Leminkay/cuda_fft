@@ -346,11 +346,7 @@ cudaError_t fft_3d(int X,int Y, int Z) {
         onembed, ostride, odist, CUFFT_C2C, batch));
 
     for (unsigned int i = 0; i < it_s; i += 1) {
-        //transfer data to gpu
-        cudaEvent_t start_trans, stop_trans;
-        cudaEventCreate(&start_trans);
-        cudaEventCreate(&stop_trans);
-        cudaEventRecord(start_trans);
+
 
         for (unsigned int j = 0; j < C; j++) {
             if (j == C / 2)
@@ -371,20 +367,6 @@ cudaError_t fft_3d(int X,int Y, int Z) {
         checkCudaErrors(cudaMemcpyAsync(d_twiddle, h_twiddle + (i * C * tZ2), C * tZ2 * sizeof(Complex),
             cudaMemcpyHostToDevice, stream[i % sNum]));
 
-        cudaEventRecord(stop_trans);
-        cudaEventSynchronize(stop_trans);
-        float ms = 0;
-        cudaEventElapsedTime(&ms, start_trans, stop_trans);
-
-        trans += ms;
-
-        cudaEventDestroy(start_trans);
-        cudaEventDestroy(stop_trans);
-
-        cudaEvent_t start_fft, stop_fft;
-        cudaEventCreate(&start_fft);
-        cudaEventCreate(&stop_fft);
-        cudaEventRecord(start_fft);
         checkCudaErrors(cufftSetStream(plan_advZ1, stream[i % sNum]));
 
         for (int k = 0; k < W / (X * Y); k++) {
@@ -393,20 +375,6 @@ cudaError_t fft_3d(int X,int Y, int Z) {
         }
         checkCudaErrors(cudaDeviceSynchronize());
         
-        cudaEventRecord(stop_fft);
-        cudaEventSynchronize(stop_fft);
-        ms = 0;
-        cudaEventElapsedTime(&ms, start_fft, stop_fft);
-
-        fft += ms;
-
-        cudaEventDestroy(start_fft);
-        cudaEventDestroy(stop_fft);
-
-        cudaEvent_t start_twidlle, stop_twidlle;
-        cudaEventCreate(&start_twidlle);
-        cudaEventCreate(&stop_twidlle);
-        cudaEventRecord(start_twidlle);
 
         //multiply by twiddle factor
         dim3 threadsPerBlock(8, 8, 16);
@@ -416,19 +384,7 @@ cudaError_t fft_3d(int X,int Y, int Z) {
         TwiddleMult3d << <numBlocks, threadsPerBlock, 0 , stream[i % sNum] >> > (d_result, d_twiddle, d_vars);
         checkCudaErrors(cudaDeviceSynchronize());
 
-        cudaEventRecord(stop_twidlle);
-        cudaEventSynchronize(stop_twidlle);
-        ms = 0;
-        cudaEventElapsedTime(&ms, start_twidlle, stop_twidlle);
 
-        twiddle += ms;
-
-        cudaEventDestroy(start_twidlle);
-        cudaEventDestroy(stop_twidlle);
-
-        cudaEventCreate(&start_fft);
-        cudaEventCreate(&stop_fft);
-        cudaEventRecord(start_fft);
         checkCudaErrors(cufftSetStream(plan_advY, stream[i % sNum]));
         for (int k = 0; k < C * tZ2; k++) {
             checkCudaErrors(cufftExecC2C(plan_advY, d_result + (k * X * Y),
@@ -436,35 +392,13 @@ cudaError_t fft_3d(int X,int Y, int Z) {
         }
         checkCudaErrors(cudaDeviceSynchronize());
         
-        cudaEventRecord(stop_fft);
-        cudaEventSynchronize(stop_fft);
-        ms = 0;
-        cudaEventElapsedTime(&ms, start_fft, stop_fft);
 
-        fft += ms;
-
-        cudaEventDestroy(start_fft);
-        cudaEventDestroy(stop_fft);
-
-        
-        cudaEventCreate(&start_trans);
-        cudaEventCreate(&stop_trans);
-        cudaEventRecord(start_trans);
 
         //transport to host
         checkCudaErrors(cudaMemcpyAsync(h_result + (i * C * W), d_signal, gpu_mem_size_b,
             cudaMemcpyDeviceToHost, stream[i % sNum]));
 
-        cudaEventRecord(stop_trans);
-        cudaEventSynchronize(stop_trans);
-        
-        cudaEventElapsedTime(&ms, start_trans, stop_trans);
 
-        trans += ms;
-
-        cudaEventDestroy(start_trans);
-        cudaEventDestroy(stop_trans);
-       
 
     }
 
@@ -504,66 +438,22 @@ cudaError_t fft_3d(int X,int Y, int Z) {
 
 
     for (unsigned int i = 0; i < it_s; i += 1) {
-        //transfer data to gpu
-        cudaEvent_t start_trans, stop_trans;
-        cudaEventCreate(&start_trans);
-        cudaEventCreate(&stop_trans);
-        cudaEventRecord(start_trans);
 
         for (unsigned int j = 0; j < C; j++) {
             memcpy(buffer + (j * W), h_result + (i * W) + (j * X * Y * Z1), W * sizeof(Complex));
         }
         checkCudaErrors(cudaMemcpyAsync(d_signal, buffer, C * W * sizeof(Complex), cudaMemcpyHostToDevice, stream[i % sNum]));
 
-        cudaEventRecord(stop_trans);
-        cudaEventSynchronize(stop_trans);
-        float ms = 0;
-        cudaEventElapsedTime(&ms, start_trans, stop_trans);
-
-        trans += ms;
-
-        cudaEventDestroy(start_trans);
-        cudaEventDestroy(stop_trans);
-
-        cudaEvent_t start_fft, stop_fft;
-        cudaEventCreate(&start_fft);
-        cudaEventCreate(&stop_fft);
-        cudaEventRecord(start_fft);
         checkCudaErrors(cufftSetStream(plan_advZ2, stream[i % sNum]));
 
         checkCudaErrors(cufftExecC2C(plan_advZ2, reinterpret_cast<cufftComplex*>(d_signal),
             reinterpret_cast<cufftComplex*>(d_result), CUFFT_FORWARD));
-        cudaEventRecord(stop_fft);
-        cudaEventSynchronize(stop_fft);
-        ms = 0;
-        cudaEventElapsedTime(&ms, start_fft, stop_fft);
 
-        fft += ms;
-
-        cudaEventDestroy(start_fft);
-        cudaEventDestroy(stop_fft);
-        
-        cudaEventCreate(&start_fft);
-        cudaEventCreate(&stop_fft);
-        cudaEventRecord(start_fft);
         checkCudaErrors(cufftSetStream(plan_advX, stream[i % sNum]));
         checkCudaErrors(cufftExecC2C(plan_advX, d_result,
              d_signal, CUFFT_FORWARD));
 
-        cudaEventRecord(stop_fft);
-        cudaEventSynchronize(stop_fft);
-        ms = 0;
-        cudaEventElapsedTime(&ms, start_fft, stop_fft);
-
-        fft += ms;
-
-        cudaEventDestroy(start_fft);
-        cudaEventDestroy(stop_fft);
-
-
-        cudaEventCreate(&start_trans);
-        cudaEventCreate(&stop_trans);
-        cudaEventRecord(start_trans);
+     
 
         checkCudaErrors(cudaMemcpyAsync(buffer, d_signal, C * W * sizeof(Complex),
             cudaMemcpyDeviceToHost, stream[i % sNum]));
@@ -572,14 +462,7 @@ cudaError_t fft_3d(int X,int Y, int Z) {
             memcpy(h_result_2 + (i * W) + (j * X * Y * Z1), buffer + (j * W), W * sizeof(Complex));
         }
         
-        cudaEventRecord(stop_trans);
-        cudaEventSynchronize(stop_trans);
-        ms = 0;
-        cudaEventElapsedTime(&ms, start_trans, stop_trans);
-        trans += ms;
-
-        cudaEventDestroy(start_trans);
-        cudaEventDestroy(stop_trans);
+        
        
     }
 
